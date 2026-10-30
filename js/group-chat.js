@@ -1265,7 +1265,19 @@ if (gid === curGid) hideTyping();
 try { await gcHydrateWait(cid); } catch (e) {}
 const rep = gcGenReply(cid, c);
 const q = (wantQuote && i === 0) ? quoteText : null;
+
+// === 新增：群友互相艾特功能 ===
+let atTarget = null;
+if (Math.random() < 0.3 && getMembers().length > 1) { // 30%的概率艾特别人
+    const others = getMembers().filter(m => m.id !== cid);
+    if (others.length > 0) {
+        atTarget = others[Math.floor(Math.random() * others.length)];
+        rep.text = '@' + memberName(atTarget.id) + ' ' + rep.text; // 在回复前加上 @名字
+        rep.parts = null; // 如果有图片，清空以保持文字正常
+    }
+}
 const rec = { side: 'in', cid: cid, name: name, text: rep.text, type: rep.type, parts: rep.parts, ts: Date.now() };
+// ============================
 if (q) rec.quote = q;
 if (rep.type === 'text' || rep.type === 'sticker' || rep.type === 'image') {
 try {
@@ -1277,7 +1289,15 @@ rec.mood = chain.map(it => ({ tag: typeName[it.type] || '情绪', label: it.cont
 if (window.addChatCount) window.addChatCount();
 } catch (e) {}
 }
-const myIdx = gcDeliverReply(gid, rec, 'in', continuation); // FIX 串群 #242：落回来源群 · #1023 continuation＝用户点「继续说」要的回应，落地强制贴底（上翻态也滑过来）
+const myIdx = gcDeliverReply(gid, rec, 'in', continuation);
+  //// === 新增：被艾特的人进行回复 ===
+if (atTarget) {
+    setTimeout(() => {
+        // 2秒~4秒后，被艾特的人会回复刚才这句话
+        memberReply(atTarget.id, rec.text, gid);
+    }, 2000 + Math.random() * 2000);
+}
+// ============================== FIX 串群 #242：落回来源群 · #1023 continuation＝用户点「继续说」要的回应，落地强制贴底（上翻态也滑过来）
 if (i < count - 1 && gid === curGid) showTyping(name);
 if (hit(c['gc-rc-prob'])) {
 setTimeout(() => {
@@ -3814,3 +3834,23 @@ return out;
 })();
 if (window.__mochiLoaded) window.__mochiLoaded.push("group-chat.js");
 } catch (__e) { if (window.__mochiErrLoaded) window.__mochiErrLoaded.push("group-chat.js"); try { console.error("[JS] group-chat.js", __e && __e.message || __e); } catch (x) {} if (window.__jsErrors) window.__jsErrors.push("[group-chat.js] " + String(__e && __e.message || __e)); } })();
+window.groupChatClear = function () { msgs = []; saveNow(); renderAll(); };
+// === 新增：群友主动发言定时器（即使你不说话，他们也会自己聊天） ===
+setInterval(() => {
+    // 1. 如果当前不在群聊页面，或者没成员，就不触发
+    if (!gcIsVisible()) return;
+    const members = getMembers();
+    if (!members.length) return;
+
+    // 2. 为了不刷屏，设置一个概率（比如每次只有 15% 的几率触发）
+    // 如果你想让他们极其活跃，把 0.15 改成 0.5；不想太吵就改成 0.05
+    if (Math.random() > 0.15) return;
+
+    // 3. 随机抽一个群友主动发言
+    const cid = members[Math.floor(Math.random() * members.length)].id;
+    
+    // 4. 调用原作者的回复函数，这样一切逻辑（打字机、延迟、音效）都会生效
+    memberReply(cid, '', curGid);
+    
+}, 45000); // 每 45 秒（45000毫秒）检查一次要不要主动说话
+// ==========================================================
